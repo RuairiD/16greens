@@ -99,8 +99,21 @@ local WALL_TILES = {
 
 local WATER_TILES = {
     48, 49, 50,
-    64, 65,
+    64, 65, 66,
     80, 81, 82,
+}
+
+
+local WATER_FRAMES = {
+    [48] = { 128, 131 },
+    [49] = { 129, 132 },
+    [50] = { 130, 133 },
+    [64] = { 144, 147 },
+    [65] = { 145, 148 },
+    [66] = { 146, 149 },
+    [80] = { 160, 163 },
+    [81] = { 161, 164 },
+    [82] = { 162, 165 },
 }
 
 
@@ -223,6 +236,7 @@ local SFX = {
 local pin
 local sparks
 local SPARK_LIFE_MAX = 60
+local SPARK_COLORS = { 1, 2, 3, 8, 9, 10, 11, 12, }
 
 local function resetSparks(x, y)
     for i, spark in ipairs(sparks) do
@@ -232,6 +246,23 @@ local function resetSparks(x, y)
         spark.velX = cos(angle) * 0.75
         spark.velY = sin(angle) * 0.75
         spark.t = SPARK_LIFE_MAX
+    end
+end
+
+local splashParticles
+local SPLASH_PARTICLE_LIFE_MAX = 25
+local SPLASH_PARTICLE_LIFE_MAX_VARIANCE = 10
+local SPLASH_COLORS = { 1, 12, }
+
+local function resetSplashParticles(x, y)
+    for i, splashParticle in ipairs(splashParticles) do
+        splashParticle.x = x
+        splashParticle.y = y
+        local angle = i/#splashParticles
+        splashParticle.velX = cos(angle) * 0.25
+        splashParticle.velY = sin(angle) * 0.25
+        splashParticle.tMax = SPLASH_PARTICLE_LIFE_MAX + rnd(SPLASH_PARTICLE_LIFE_MAX_VARIANCE)
+        splashParticle.t = splashParticle.tMax
     end
 end
 
@@ -314,7 +345,7 @@ function Ball:update()
         for direction, tile in pairs(RAMPS) do
             if tile == currentTile then
                 onRamp = true
-                -- self:applyRamp(direction)
+                self:applyRamp(direction)
                 break
             end
         end
@@ -337,14 +368,23 @@ function Ball:update()
             self.x + Ball.SIZE/2, self.y + Ball.SIZE/2,
             pin.x + 2, pin.y + 2, 4, 4
         ) then
-            if speed < 3 then
-                self.isSunk = true
-                self.isStopped = true
-                sfx(SFX.SINK)
-                resetSparks(pin.x + 4, pin.y + 4)
-            else
-                sfx(SFX.SKIM)
+            if not self.isSkimming then
+                if speed < 3 then
+                    self.isSunk = true
+                    self.isStopped = true
+                    sfx(SFX.SINK)
+                    resetSparks(pin.x + 4, pin.y + 4)
+                else
+                    sfx(SFX.SKIM)
+                    self.velX = self.velX * 1/2
+                    self.velY = self.velY * 1/2
+                    -- Set isSkimming flag to prevent ball skimming every frame
+                    -- ball is over hole (and losing too much speed as a result)
+                    self.isSkimming = true
+                end
             end
+        else
+            self.isSkimming = false
         end
     end
 end
@@ -382,6 +422,10 @@ local waterTimer
 local gameStartTimer
 local showingScore
 local roundOver
+local showingScorecard
+
+local waterTiles
+local waterAnimationFrame = 0
 
 
 local function getHolePosition(holeNumber)
@@ -438,7 +482,10 @@ function initGame()
     angle = 0.25
     ball = Ball(32, 32)
     scores = {}
-    currentHole = 1
+    for i=1,16 do
+        scores[i] = 0
+    end
+    currentHole = 16
     -- Sparks are used to celebrate the ball going in the hole.
     sparks = {}
     for i=1,8 do
@@ -453,6 +500,34 @@ function initGame()
             }
         )
     end
+    -- Splash particles are used to show you fucked up.
+    splashParticles = {}
+    for i=1,8 do
+        add(
+            splashParticles,
+            {
+                x = 0,
+                y = 0,
+                velX = 0,
+                velY = 0,
+                t = 0,
+            }
+        )
+    end
+    
+    waterTiles = {}
+    for x=0, 128 do
+        for y=0, 32 do
+            local tile = mget(x, y)
+            if isInTileset(tile, WATER_TILES) then
+                add(
+                    waterTiles,
+                    { tile = tile, x = x * 8, y = y * 8 }
+                )
+            end
+        end
+    end
+
     initHole(currentHole)
 end
 
@@ -466,18 +541,30 @@ function updateGame()
     if nextHoleTimer > 0 then
         nextHoleTimer = nextHoleTimer - 1
         if nextHoleTimer == 0 then
-            if currentHole < 15 then
+            if currentHole < 16 then
                 currentHole = currentHole + 1
                 initHole(currentHole)
             else
                 roundOver = true
+                sfx(SFX.SELECT)
             end
         end
     end
 
+    showingScorecard = false
     if roundOver then
         if btn(5) then
+            sfx(SFX.SELECT)
             initGame()
+            -- return immediately to avoid
+            -- doing any premature updating
+            -- before gameStartTimer hits 0
+            return
+        end
+    else
+        -- Show scorecard
+        if btn(4) then
+            showingScorecard = true
         end
     end
 
@@ -500,6 +587,17 @@ function updateGame()
             spark.y = spark.y + spark.velY
             spark.velX = spark.velX * 0.99
             spark.velY = spark.velY * 0.99
+        end
+    end
+
+    -- Update splash particles that show the ball entering the water
+    for _, splashParticle in ipairs(splashParticles) do
+        if splashParticle.t > 0 then
+            splashParticle.t = splashParticle.t - 1
+            splashParticle.x = splashParticle.x + splashParticle.velX
+            splashParticle.y = splashParticle.y + splashParticle.velY
+            splashParticle.velX = splashParticle.velX * 0.97
+            splashParticle.velY = splashParticle.velY * 0.97
         end
     end
 
@@ -545,6 +643,10 @@ function updateGame()
         if isInTileset(currentTile, WATER_TILES) then
             waterTimer = WATER_TIMER_MAX
             sfx(SFX.SPLASH)
+            resetSplashParticles(
+                ball.x + Ball.SIZE/2,
+                ball.y + Ball.SIZE/2
+            )
         end
     else
         if showingScore and btnp(5) then
@@ -556,7 +658,7 @@ function updateGame()
 end
 
 function drawHud()
-    if roundOver then
+    if showingScorecard or roundOver then
         drawBox(8, 8, 112, 12)
         drawBox(8, 20, 112, 100)
         print('scorecard', (128 - 9 * 4)/2, 12, 7)
@@ -588,10 +690,18 @@ function drawHud()
         local firstHalfScore = 0
         local secondHalfScore = 0
         for i=1,8 do
-            firstHalfScore = firstHalfScore + scores[i]
+            local holeScore = scores[i]
+            if not holeScore then
+                holeScore = 0
+            end
+            firstHalfScore = firstHalfScore + holeScore
         end
         for i=9,16 do
-            secondHalfScore = secondHalfScore + scores[i]
+            local holeScore = scores[i]
+            if not holeScore then
+                holeScore = 0
+            end
+            secondHalfScore = secondHalfScore + holeScore
         end
         print(firstHalfScore, 102, 48, 7)
         print(secondHalfScore, 102, 80, 7)
@@ -601,9 +711,13 @@ function drawHud()
         local finalScore = tostring(firstHalfScore + secondHalfScore)
         print(finalScore, (128 - #finalScore * 4)/2, 98, 7)
 
-        drawBox(16, 108, 96, 16)
-        local text = "press \x97 to play again"
-        print(text, (128 - #text * 4)/2, 114, 7)
+        -- Only offer player next round if round is over, not
+        -- if they're checking their scorecard mid-game
+        if roundOver then
+            drawBox(16, 108, 96, 16)
+            local text = "press \x97 to play again"
+            print(text, (128 - #text * 4)/2, 114, 7)
+        end
     else
         -- Shadow
         rectfill(
@@ -670,6 +784,14 @@ function drawGame()
 
     camera(cameraX, cameraY)
     map(0, 0, 0, 0, 128, 32)
+    -- Add animated water tiles
+    for _, waterTile in ipairs(waterTiles) do
+        spr(
+            WATER_FRAMES[waterTile.tile][flr((waterAnimationFrame/20) % 2) + 1],
+            waterTile.x,
+            waterTile.y
+        )
+    end
 
     if gameStartTimer == 0 and not holeCompleted and waterTimer == 0 then
         ball:draw()
@@ -687,7 +809,22 @@ function drawGame()
     for _, spark in ipairs(sparks) do
         if spark.t > 0 then
             local y = spark.y + 16 * sin(0.5 * spark.t/SPARK_LIFE_MAX)
-            rectfill(spark.x, y, spark.x + 1, y + 1, flr(rnd(16)))
+            -- Random fun colour
+            local splashColor = SPARK_COLORS[flr(rnd(#SPARK_COLORS)) + 1]
+            rectfill(spark.x, y, spark.x + 1, y + 1, splashColor)
+        end
+    end
+
+    for _, splashParticle in ipairs(splashParticles) do
+        if splashParticle.t > 0 then
+            local y = splashParticle.y + 8 * sin(0.5 * splashParticle.t/splashParticle.tMax)
+            -- Random blue shade
+            local splashColor = SPLASH_COLORS[flr(rnd(#SPLASH_COLORS)) + 1]
+            rectfill(
+                splashParticle.x, y,
+                splashParticle.x + 1, y + 1,
+                splashColor
+            )
         end
     end
 
@@ -721,6 +858,10 @@ local sceneTransitionPixels = createTransitionPixels()
 local titleTimer = 0
 local function updateTitles()
     titleTimer = titleTimer + 1
+    if titleTimer == 90 then
+        -- TODO music, three channels to allow for SFX
+        -- music(0, 200)
+    end
     if titleTimer > 120 then
         if btn(5) then
             currentState = STATES.GAME
@@ -782,9 +923,11 @@ function _init()
     palt(14, true)
     currentState = STATES.TITLE
     initGame()
+    sfx(SFX.SINK)
 end
 
 function _update60()
+    waterAnimationFrame = waterAnimationFrame + 1
     if currentState == STATES.GAME then
         updateGame()
     elseif currentState == STATES.TITLE then
