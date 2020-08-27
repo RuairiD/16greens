@@ -485,7 +485,7 @@ function initGame()
     for i=1,16 do
         scores[i] = 0
     end
-    currentHole = 16
+    currentHole = 1
     -- Sparks are used to celebrate the ball going in the hole.
     sparks = {}
     for i=1,8 do
