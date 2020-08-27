@@ -856,6 +856,7 @@ end
 local sceneTransitionPixels = createTransitionPixels()
 
 local titleTimer = 0
+local showingInstructions = false
 local function updateTitles()
     titleTimer = titleTimer + 1
     if titleTimer == 90 then
@@ -863,9 +864,20 @@ local function updateTitles()
         -- music(0, 200)
     end
     if titleTimer > 120 then
-        if btn(5) then
-            currentState = STATES.GAME
-            sfx(SFX.SELECT)
+        if not showingInstructions then
+            if btnp(5) then
+                currentState = STATES.GAME
+                sfx(SFX.SELECT)
+            elseif btnp(4) then
+                -- Show instructions
+                sfx(SFX.SELECT)
+                showingInstructions = true
+            end
+        else
+            if btn(5) or btnp(4) then
+                sfx(SFX.SELECT)
+                showingInstructions = false
+            end
         end
     end
 end
@@ -883,6 +895,7 @@ local function drawTitles()
             7
         )
     elseif titleTimer >= 90 then
+        -- Logo
         drawBox(12, 32, 104, 32)
         spr(
             96,
@@ -892,10 +905,22 @@ local function drawTitles()
             2
         )
 
-        drawBox(20, 80, 88, 16)
-        if titleTimer > 120 and (titleTimer/45) % 2 < 1 then
-            local text = "press \x97 to tee off"
-            print(text, (128 - #text * 4)/2, 86, 7)
+        if showingInstructions then
+            drawBox(4, 72, 120, 48)
+            local angleInstructionText = "\x8b \x91 - adjust stroke angle"
+            local powerInstructionText = "\x97 (held) - select power"
+            local strokeInstructionText = "\x97 (release) - play stroke"
+            local scorecardInstructionText = "\x8e - show scorecard"
+            print(angleInstructionText, (128 - #angleInstructionText * 4)/2, 78, 7)
+            print(powerInstructionText, (128 - #powerInstructionText * 4)/2, 88, 7)
+            print(strokeInstructionText, (128 - #strokeInstructionText * 4)/2, 98, 7)
+            print(scorecardInstructionText, (128 - #scorecardInstructionText * 4)/2, 108, 7)
+        else
+            drawBox(4, 80, 120, 28)
+            local startText = "press \x97 to tee off"
+            local instructionsText = "press \x8e to see instructions"
+            print(startText, (128 - #startText * 4)/2, 86, 7)
+            print(instructionsText, (128 - #instructionsText * 4)/2, 98, 7)
         end
 
         if titleTimer < 120 then
