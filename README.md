@@ -4,9 +4,10 @@
 Celtic Manor too far away? **16 Greens** is the next best thing!
 
 <p float="left">
-  <img src="https://i.imgur.com/aUQ5YY4.png" width="256" />
-  <img src="https://i.imgur.com/3tRXlFg.png" width="256" /> 
-  <img src="https://i.imgur.com/7daBZnd.png" width="256" />
+  <img src="https://i.imgur.com/HLOtUtU.png" width="256" />
+  <img src="https://i.imgur.com/Ps4RHqv.png" width="256" /> 
+  <img src="https://i.imgur.com/iIaFqxB.png" width="256" />
+  <img src="https://i.imgur.com/VGy1xEE.png" width="256" />
 </p>
 
 ## Features
