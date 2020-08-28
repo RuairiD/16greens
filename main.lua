@@ -412,6 +412,8 @@ local POWER_CHANGE_RATE = 0.02
 local NEXT_HOLE_TIMER_MAX = 120
 local WATER_TIMER_MAX = 60
 
+local STROKE_LIMIT = 8
+
 local balls
 local ballOrigin
 local currentHole
@@ -463,8 +465,8 @@ function initHole(holeNumber)
     if firstPlayer then
         activePlayer = firstPlayer
     end
-    if playerCount > 1 and holeNumber > 1 then
-        for p=2, playerCount do
+    if holeNumber > 1 then
+        for p=1, playerCount do
             if scores[p][holeNumber - 1] < scores[activePlayer][holeNumber - 1] then
                 activePlayer = p
             end
@@ -694,7 +696,7 @@ function updateGame()
 
                 -- Skew angle slightly so next player can't 'cheat' and use
                 -- same angle to get same result.
-                angle = angle + rnd(0.2) - 0.1
+                angle = angle + rnd(0.1) - 0.05
             end
         end
 
@@ -722,8 +724,13 @@ function updateGame()
         -- Regular next player if player doesn't sink the ball.
         -- If the player sinks, this logic is handled after dismissing the score alert.
         if strokePlayed and balls[activePlayer].isStopped and not balls[activePlayer].isSunk then
-            nextPlayer()
             strokePlayed = false
+            if scores[activePlayer][currentHole] >= STROKE_LIMIT then
+                playerHasCompletedHole[activePlayer] = true
+                showingScore = true
+            else
+                nextPlayer()
+            end
         end
     else
         if showingScore and btnp(5) then
@@ -918,6 +925,11 @@ function drawHud()
 
         -- Show score after completing hole
         if showingScore then
+            if not balls[activePlayer].isSunk and scores[activePlayer][currentHole] >= STROKE_LIMIT then
+                drawBox(28, 32, 72, 16)
+                print('stroke limit', (128 - 12 * 4)/2, 38, 7)
+            end
+
             drawBox(57, 57, 14, 14)
             print(scores[activePlayer][currentHole], 63, 62, 7)
 
