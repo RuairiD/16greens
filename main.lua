@@ -905,7 +905,7 @@ function drawHud()
             print(scores[activePlayer][currentHole], 63, 62, 7)
 
             drawBox(20, 82, 88, 16)
-            print('press X to continue', (128 - 19 * 4)/2, 88, 7)
+            print('press \x97 to continue', (128 - 19 * 4)/2, 88, 7)
         end
     end
 end
