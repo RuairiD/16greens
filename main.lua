@@ -1,4 +1,4 @@
-local VERSION = 'v1.1.0'
+local VERSION = 'v1.2.0'
 -- START CLASSIC
 local Object = {}
 Object.__index = Object
