@@ -1,3 +1,4 @@
+local VERSION = 'v1.1.0'
 -- START CLASSIC
 local Object = {}
 Object.__index = Object
@@ -1029,7 +1030,6 @@ end
 -- END GAME
 
 -- START TITLES
-
 local function createTransitionPixels()
     local result = {}
     for x=0,15 do
@@ -1052,13 +1052,13 @@ local selectedPlayerCount = 1
 
 local function updateTitles()
     titleTimer = titleTimer + 1
-    if titleTimer == 120 then
+    if titleTimer == 90 then
         sfx(SFX.START)
     end
-    if titleTimer == 240 then
+    if titleTimer == 180 then
         sfx(SFX.SELECT)
     end
-    if titleTimer > 240 then
+    if titleTimer > 180 then
         if not showingInstructions then
             if btnp(0) and selectedPlayerCount > 1 then
                 sfx(SFX.STROKE)
@@ -1087,23 +1087,28 @@ local function updateTitles()
 end
 
 local function drawTitles()
-    if titleTimer < 90 then
+    if titleTimer < 60 then
         cls()
     end
-    if titleTimer < 60 then
-        local logoText = 'ruairi made this'
+    if titleTimer < 45 then
+        local logoText = 'ruairidx'
+        local actualLogoText = logoText
+        if titleTimer < 5 then
+            actualLogoText = sub(logoText, 1, ceil((titleTimer/5) * #logoText))
+        end
+
         print(
-            logoText,
+            actualLogoText,
             (128 - #logoText * 4)/2,
             62,
             7
         )
-    elseif titleTimer >= 90 then
+    elseif titleTimer >= 60 then
         local logoBoxY = 48
-        if titleTimer > 240 then
+        if titleTimer > 180 then
             logoBoxY = 16
-        elseif titleTimer > 180 then
-            logoBoxY = 48 - 32 * (titleTimer - 180)/60 
+        elseif titleTimer > 120 then
+            logoBoxY = 48 - 32 * (titleTimer - 120)/60 
         end
         -- Logo
         drawBox(12, logoBoxY, 104, 32)
@@ -1115,7 +1120,7 @@ local function drawTitles()
             2
         )
 
-        if titleTimer > 240 then
+        if titleTimer > 180 then
             if showingInstructions then
                 drawBox(4, 64, 120, 52)
                 local angleInstructionText = "\x8b \x91 - adjust stroke angle"
@@ -1136,12 +1141,14 @@ local function drawTitles()
                 print(selectedPlayerCountText, (128 - #selectedPlayerCountText * 4)/2, 82, 10)
                 print(startText, (128 - #startText * 4)/2, 94, 7)
                 print(instructionsText, (128 - #instructionsText * 4)/2, 106, 7)
+                print(VERSION, (128 - #VERSION * 4), 122, 0)
+                print(VERSION, (128 - #VERSION * 4), 121, 7)
             end
         end
 
-        if titleTimer < 150 then
+        if titleTimer < 90 then
             -- Cool pixelate effect when changing scenes
-            local pixelCount = (16 * 16) * (1 - ((titleTimer - 90)/60))
+            local pixelCount = (16 * 16) * (1 - ((titleTimer - 60)/30))
             for i=1,pixelCount do
                 rectfill(
                     sceneTransitionPixels[i].x * 8,
