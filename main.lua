@@ -231,6 +231,8 @@ local SFX = {
     SINK = 60,
     SKIM = 58,
     SELECT = 59,
+    START = 13,
+    ROUND_OVER = 12,
 }
 
 local pin
@@ -415,6 +417,9 @@ local ballOrigin
 local currentHole
 local playerCount
 local activePlayer
+-- Keep track of the player who played first last hole
+-- to ensure countback is applied.
+local firstPlayer
 local scores
 local angle
 -- Flag used to denote when player has started taking
@@ -455,6 +460,17 @@ end
 
 function initHole(holeNumber)
     activePlayer = 1
+    if firstPlayer then
+        activePlayer = firstPlayer
+    end
+    if playerCount > 1 and holeNumber > 1 then
+        for p=2, playerCount do
+            if scores[p][holeNumber - 1] < scores[activePlayer][holeNumber - 1] then
+                activePlayer = p
+            end
+        end
+    end
+    firstPlayer = activePlayer
     playerHasCompletedHole = {}
     holeCompleted = false
     showingScore = false
@@ -489,6 +505,7 @@ end
 
 
 function initGame(players)
+    firstPlayer = nil
     playerCount = players
     gameStartTimer = 60
     power = 0
@@ -587,7 +604,7 @@ function updateGame()
                 initHole(currentHole)
             else
                 roundOver = true
-                sfx(SFX.SELECT)
+                sfx(SFX.ROUND_OVER)
             end
         end
     end
@@ -1014,11 +1031,13 @@ local selectedPlayerCount = 1
 
 local function updateTitles()
     titleTimer = titleTimer + 1
-    if titleTimer == 90 then
-        -- TODO music, three channels to allow for SFX
-        -- music(0, 200)
+    if titleTimer == 120 then
+        sfx(SFX.START)
     end
-    if titleTimer > 120 then
+    if titleTimer == 240 then
+        sfx(SFX.SELECT)
+    end
+    if titleTimer > 240 then
         if not showingInstructions then
             if btnp(0) and selectedPlayerCount > 1 then
                 sfx(SFX.STROKE)
@@ -1059,41 +1078,49 @@ local function drawTitles()
             7
         )
     elseif titleTimer >= 90 then
+        local logoBoxY = 48
+        if titleTimer > 240 then
+            logoBoxY = 16
+        elseif titleTimer > 180 then
+            logoBoxY = 48 - 32 * (titleTimer - 180)/60 
+        end
         -- Logo
-        drawBox(12, 16, 104, 32)
+        drawBox(12, logoBoxY, 104, 32)
         spr(
             96,
             (128 - 9 * 8)/2,
-            24,
+            logoBoxY + 8,
             9,
             2
         )
 
-        if showingInstructions then
-            drawBox(4, 64, 120, 52)
-            local angleInstructionText = "\x8b \x91 - adjust stroke angle"
-            local powerInstructionText = "\x97 (held) - select power"
-            local strokeInstructionText = "\x97 (release) - play stroke"
-            local scorecardInstructionText = "\x8e - show scorecard"
-            print(angleInstructionText, (128 - #angleInstructionText * 4)/2, 70, 7)
-            print(powerInstructionText, (128 - #powerInstructionText * 4)/2, 82, 7)
-            print(strokeInstructionText, (128 - #strokeInstructionText * 4)/2, 94, 7)
-            print(scorecardInstructionText, (128 - #scorecardInstructionText * 4)/2, 106, 7)
-        else
-            drawBox(4, 64, 120, 52)
-            local playersText = "select number of players"
-            local selectedPlayerCountText = "\x8b  "..tostring(selectedPlayerCount).."  \x91"
-            local startText = "press \x97 to tee off"
-            local instructionsText = "press \x8e to see instructions"
-            print(playersText, (128 - #playersText * 4)/2, 70, 7)
-            print(selectedPlayerCountText, (128 - #selectedPlayerCountText * 4)/2, 82, 10)
-            print(startText, (128 - #startText * 4)/2, 94, 7)
-            print(instructionsText, (128 - #instructionsText * 4)/2, 106, 7)
+        if titleTimer > 240 then
+            if showingInstructions then
+                drawBox(4, 64, 120, 52)
+                local angleInstructionText = "\x8b \x91 - adjust stroke angle"
+                local powerInstructionText = "\x97 (held) - select power"
+                local strokeInstructionText = "\x97 (release) - play stroke"
+                local scorecardInstructionText = "\x8e - show scorecard"
+                print(angleInstructionText, (128 - #angleInstructionText * 4)/2, 70, 7)
+                print(powerInstructionText, (128 - #powerInstructionText * 4)/2, 82, 7)
+                print(strokeInstructionText, (128 - #strokeInstructionText * 4)/2, 94, 7)
+                print(scorecardInstructionText, (128 - #scorecardInstructionText * 4)/2, 106, 7)
+            else
+                drawBox(4, 64, 120, 52)
+                local playersText = "select number of players"
+                local selectedPlayerCountText = "\x8b  "..tostring(selectedPlayerCount).."  \x91"
+                local startText = "press \x97 to tee off"
+                local instructionsText = "press \x8e to see instructions"
+                print(playersText, (128 - #playersText * 4)/2, 70, 7)
+                print(selectedPlayerCountText, (128 - #selectedPlayerCountText * 4)/2, 82, 10)
+                print(startText, (128 - #startText * 4)/2, 94, 7)
+                print(instructionsText, (128 - #instructionsText * 4)/2, 106, 7)
+            end
         end
 
-        if titleTimer < 120 then
+        if titleTimer < 150 then
             -- Cool pixelate effect when changing scenes
-            local pixelCount = (16 * 16) * (1 - ((titleTimer - 90)/30))
+            local pixelCount = (16 * 16) * (1 - ((titleTimer - 90)/60))
             for i=1,pixelCount do
                 rectfill(
                     sceneTransitionPixels[i].x * 8,
