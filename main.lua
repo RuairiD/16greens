@@ -272,6 +272,12 @@ Ball.MAX_SPEED = 8
 Ball.FRICTION = 0.98
 Ball.SIZE = 4
 Ball.RAMP_SPEED_CHANGE_RATE = 0.05
+Ball.SPRITES = {
+    [1] = 17,
+    [2] = 53,
+    [3] = 54,
+    [4] = 55,
+}
 
 function Ball:new(x, y)
     self.x = x
@@ -311,10 +317,6 @@ function Ball:applyRamp(direction)
     elseif direction == 'EAST' then
         self.velX = self.velX + Ball.RAMP_SPEED_CHANGE_RATE
     end
-end
-
-function Ball:canSink()
-    -- Ball can only sink in hole if it is going slow enough.
 end
 
 function Ball:update()
@@ -389,8 +391,8 @@ function Ball:update()
     end
 end
 
-function Ball:draw()
-    spr(17, self.x - (8 - Ball.SIZE)/2, self.y - (8 - Ball.SIZE)/2)
+function Ball:draw(playerNumber)
+    spr(Ball.SPRITES[playerNumber], self.x - (8 - Ball.SIZE)/2, self.y - (8 - Ball.SIZE)/2)
 end
 
 -- Distance from ball where the line should start.
@@ -398,7 +400,7 @@ local ANGLE_INDICATOR_BUFFER = 4
 local ANGLE_INDICATOR_LENGTH = 24
 local ANGLE_CHANGE_RATE = 0.0025
 
-local POWER_BAR_WIDTH = 48
+local POWER_BAR_WIDTH = 44
 local POWER_BAR_HEIGHT = 8
 local POWER_BAR_MARGIN = 1
 local POWER_BAR_X = 128 - POWER_BAR_WIDTH - POWER_BAR_MARGIN - 3
@@ -408,13 +410,21 @@ local POWER_CHANGE_RATE = 0.02
 local NEXT_HOLE_TIMER_MAX = 120
 local WATER_TIMER_MAX = 60
 
-local ball
+local balls
 local ballOrigin
 local currentHole
+local playerCount
+local activePlayer
 local scores
 local angle
+-- Flag used to denote when player has started taking
+-- stroke. Used to prevent accidentally playing stroke when
+-- pressing X to dismiss score alert or something.
+local charging
 local power
 local powerIncreasing
+local strokePlayed
+local playerHasCompletedHole
 local holeCompleted
 local nextHoleTimer
 local waterTimer
@@ -444,12 +454,13 @@ end
 
 
 function initHole(holeNumber)
+    activePlayer = 1
+    playerHasCompletedHole = {}
     holeCompleted = false
     showingScore = false
     roundOver = false
     nextHoleTimer = 0
     waterTimer = 0
-    scores[holeNumber] = 0
 
     local holeX, holeY = getHolePosition(holeNumber)
 
@@ -466,24 +477,33 @@ function initHole(holeNumber)
                     x = x * 8,
                     y = y * 8,
                 }
-                ball:reset(x * 8 + 2, y * 8 + 2)
+                for _, ball in ipairs(balls) do
+                    ball:reset(x * 8 + 2, y * 8 + 2)
+                end
             end
         end
     end
 
-    angle = flr(atan2(pin.x - ball.x, pin.y - ball.y) * 8) * 0.125
+    angle = flr(atan2(pin.x - balls[1].x, pin.y - balls[1].y) * 8) * 0.125
 end
 
 
-function initGame()
+function initGame(players)
+    playerCount = players
     gameStartTimer = 60
     power = 0
     powerIncreasing = true
     angle = 0.25
-    ball = Ball(32, 32)
+    balls = {}
+    for i=1,playerCount do
+        add(balls, Ball(0, 0))
+    end
     scores = {}
-    for i=1,16 do
-        scores[i] = 0
+    for p=1, playerCount do
+        scores[p] = {}
+        for h=1,16 do
+            scores[p][h] = 0
+        end
     end
     currentHole = 1
     -- Sparks are used to celebrate the ball going in the hole.
@@ -532,6 +552,27 @@ function initGame()
 end
 
 
+local function nextPlayer()
+    -- Loop through all players to find the next one
+    -- who hasn't finished the hole. If none found,
+    -- set to 0.
+    local originalPlayer = activePlayer
+    while true do
+        activePlayer = activePlayer + 1
+        if activePlayer > playerCount then
+            activePlayer = 1
+        end
+        if not playerHasCompletedHole[activePlayer] then
+            return
+        end
+        if activePlayer == originalPlayer then
+            activePlayer = 0
+            return
+        end
+    end
+end
+
+
 function updateGame()
     if gameStartTimer > 0 then
         gameStartTimer = gameStartTimer - 1
@@ -555,7 +596,7 @@ function updateGame()
     if roundOver then
         if btn(5) then
             sfx(SFX.SELECT)
-            initGame()
+            currentState = STATES.TITLE
             -- return immediately to avoid
             -- doing any premature updating
             -- before gameStartTimer hits 0
@@ -572,7 +613,7 @@ function updateGame()
     if waterTimer > 0 then
         waterTimer = waterTimer - 1
         if waterTimer == 0 then
-            ball:reset(
+            balls[activePlayer]:reset(
                 ballOrigin.x + 2,
                 ballOrigin.y + 2
             )
@@ -601,59 +642,194 @@ function updateGame()
         end
     end
 
-    if not holeCompleted and waterTimer == 0 then
+    if waterTimer == 0 and activePlayer > 0 and not playerHasCompletedHole[activePlayer] then
         if btn(0) then
             angle = angle + ANGLE_CHANGE_RATE
         elseif btn(1) then
             angle = angle - ANGLE_CHANGE_RATE
         end
 
-        if btn(5) then
-            if powerIncreasing then
-                power = power + POWER_CHANGE_RATE
-            else
-                power = power - POWER_CHANGE_RATE
-            end
-            if power > 1 then
-                power = 1
-                powerIncreasing = false
-            elseif power < 0 then
+        if btnp(5) then
+            charging = true
+        end
+
+        if charging then
+            if btn(5) then
+                if powerIncreasing then
+                    power = power + POWER_CHANGE_RATE
+                else
+                    power = power - POWER_CHANGE_RATE
+                end
+                if power > 1 then
+                    power = 1
+                    powerIncreasing = false
+                elseif power < 0 then
+                    power = 0
+                    powerIncreasing = true
+                end
+            elseif power > 0 then
+                charging = false
+                balls[activePlayer]:hit(angle, power)
+                strokePlayed = true
                 power = 0
                 powerIncreasing = true
+                scores[activePlayer][currentHole] = scores[activePlayer][currentHole] + 1
+
+                -- Skew angle slightly so next player can't 'cheat' and use
+                -- same angle to get same result.
+                angle = angle + rnd(0.2) - 0.1
             end
-        elseif power > 0 then
-            ball:hit(angle, power)
-            power = 0
-            powerIncreasing = true
-
-            scores[currentHole] = scores[currentHole] + 1
         end
-        ball:update()
 
-        if ball.isSunk then
-            holeCompleted = true
-            showingScore = true
-        end
+        balls[activePlayer]:update()
 
         -- Check for water. sploosh
         local currentTile = mget(
-            flr((ball.x + Ball.SIZE/2)/8),
-            flr((ball.y + Ball.SIZE/2)/8)
+            flr((balls[activePlayer].x + Ball.SIZE/2)/8),
+            flr((balls[activePlayer].y + Ball.SIZE/2)/8)
         )
         if isInTileset(currentTile, WATER_TILES) then
             waterTimer = WATER_TIMER_MAX
             sfx(SFX.SPLASH)
             resetSplashParticles(
-                ball.x + Ball.SIZE/2,
-                ball.y + Ball.SIZE/2
+                balls[activePlayer].x + Ball.SIZE/2,
+                balls[activePlayer].y + Ball.SIZE/2
             )
+        end
+
+        if balls[activePlayer].isSunk then
+            playerHasCompletedHole[activePlayer] = true
+            showingScore = true
+        end
+
+        -- Regular next player if player doesn't sink the ball.
+        -- If the player sinks, this logic is handled after dismissing the score alert.
+        if strokePlayed and balls[activePlayer].isStopped and not balls[activePlayer].isSunk then
+            nextPlayer()
+            strokePlayed = false
         end
     else
         if showingScore and btnp(5) then
+            nextPlayer()
             showingScore = false
-            nextHoleTimer = NEXT_HOLE_TIMER_MAX
             sfx(SFX.SELECT)
+            strokePlayed = false
+            if activePlayer == 0 then
+                holeCompleted = true
+                nextHoleTimer = NEXT_HOLE_TIMER_MAX
+            end
         end
+    end
+end
+
+
+local function drawSingleScorecard()
+    local x = 0
+    local y = 0
+    rectfill(20, 40 + 6, 108, 40 + 6, 7)
+    rectfill(20, 72 + 6, 108, 72 + 6, 7)
+    for holeNumber, score in pairs(scores[1]) do
+        print(
+            holeNumber,
+            22 + x * 10,
+            40 + y * 32,
+            7
+        )
+        print(
+            score,
+            22 + x * 10,
+            40 + y * 32 + 8,
+            7
+        )
+        x = x + 1
+        if x >= 8 then
+            x = 0
+            y = y + 1
+        end
+    end
+    -- Add scores onto the ends of rows
+    local firstHalfScore = 0
+    local secondHalfScore = 0
+    for i=1,8 do
+        local holeScore = scores[1][i]
+        if not holeScore then
+            holeScore = 0
+        end
+        firstHalfScore = firstHalfScore + holeScore
+    end
+    for i=9,16 do
+        local holeScore = scores[1][i]
+        if not holeScore then
+            holeScore = 0
+        end
+        secondHalfScore = secondHalfScore + holeScore
+    end
+    print(firstHalfScore, 102, 48, 7)
+    print(secondHalfScore, 102, 80, 7)
+
+    -- Final score
+    print('SCORE', (128 - 5 * 4)/2, 92, 7)
+    local finalScore = tostring(firstHalfScore + secondHalfScore)
+    print(finalScore, (128 - #finalScore * 4)/2, 98, 7)
+end
+
+function drawMultiScorecard()
+    local totalScores = {}
+    for p=1, playerCount do
+        local totalScore = 0
+        for _, holeScore in ipairs(scores[p]) do
+            totalScore = totalScore + holeScore
+        end
+        totalScores[p] = totalScore
+    end
+
+    local winningPlayers= { 1 }
+    for p=2, playerCount do
+        -- All players in winningPlayers have the same score, so we can
+        -- just check the first one to see if this player is better.
+        if totalScores[p] < totalScores[winningPlayers[1]] then
+            winningPlayers = { p }
+        elseif totalScores[p] == totalScores[winningPlayers[1]] then
+            add(winningPlayers, p)
+        end
+    end
+
+    for p=1, playerCount do
+        local x = (p - 1) % 2
+        local y = flr((p - 1)/2)
+
+        local color = 7
+        local playerText = 'Player '..tostring(p)
+        if roundOver then
+            for _, winningPlayer in ipairs(winningPlayers) do
+                if winningPlayer == p then
+                    color = 10
+                    playerText = 'Champion '..tostring(p)
+                    break
+                end
+            end
+        end
+        local totalScoreText = tostring(totalScores[p])
+
+        print(
+            playerText,
+            16 + x * 48 + (48 - #playerText * 4)/2,
+            40 + y * 32,
+            color
+        )
+
+        spr(
+            Ball.SPRITES[p],
+            16 + x * 48 + (48 - 8)/2,
+            48 + y * 32
+        )
+
+        print(
+            totalScoreText,
+            16 + x * 48 + (48 - #totalScoreText * 4)/2,
+            58 + y * 32,
+            color
+        )
     end
 end
 
@@ -663,54 +839,12 @@ function drawHud()
         drawBox(8, 20, 112, 100)
         print('scorecard', (128 - 9 * 4)/2, 12, 7)
 
-        local x = 0
-        local y = 0
-        rectfill(20, 40 + 6, 108, 40 + 6, 7)
-        rectfill(20, 72 + 6, 108, 72 + 6, 7)
-        for holeNumber, score in pairs(scores) do
-            print(
-                holeNumber,
-                22 + x * 10,
-                40 + y * 32,
-                7
-            )
-            print(
-                score,
-                22 + x * 10,
-                40 + y * 32 + 8,
-                7
-            )
-            x = x + 1
-            if x >= 8 then
-                x = 0
-                y = y + 1
-            end
+        if playerCount == 1 then
+            drawSingleScorecard()
+        else
+            drawMultiScorecard()
         end
-        -- Add scores onto the ends of rows
-        local firstHalfScore = 0
-        local secondHalfScore = 0
-        for i=1,8 do
-            local holeScore = scores[i]
-            if not holeScore then
-                holeScore = 0
-            end
-            firstHalfScore = firstHalfScore + holeScore
-        end
-        for i=9,16 do
-            local holeScore = scores[i]
-            if not holeScore then
-                holeScore = 0
-            end
-            secondHalfScore = secondHalfScore + holeScore
-        end
-        print(firstHalfScore, 102, 48, 7)
-        print(secondHalfScore, 102, 80, 7)
-
-        -- Final score
-        print('SCORE', (128 - 5 * 4)/2, 92, 7)
-        local finalScore = tostring(firstHalfScore + secondHalfScore)
-        print(finalScore, (128 - #finalScore * 4)/2, 98, 7)
-
+        
         -- Only offer player next round if round is over, not
         -- if they're checking their scorecard mid-game
         if roundOver then
@@ -749,7 +883,6 @@ function drawHud()
         print('power', POWER_BAR_X + 1 + (POWER_BAR_WIDTH - 20)/2, POWER_BAR_Y + 1 + (POWER_BAR_HEIGHT - 4)/2, 7)
 
         -- Hole Number
-        -- Shadow
         drawBox(POWER_BAR_MARGIN, POWER_BAR_MARGIN, 32, 10)
         -- Hole number text
         print(
@@ -759,10 +892,17 @@ function drawHud()
             7
         )
 
+        -- Player indicator
+        if activePlayer > 0 then
+            drawBox(35, POWER_BAR_MARGIN, 43, 10)
+            print("Player "..tostring(activePlayer), 35 + 3, POWER_BAR_MARGIN + 3, 7)
+            spr(Ball.SPRITES[activePlayer], 69, POWER_BAR_MARGIN + 1)
+        end
+
         -- Show score after completing hole
         if showingScore then
             drawBox(57, 57, 14, 14)
-            print(scores[currentHole], 63, 62, 7)
+            print(scores[activePlayer][currentHole], 63, 62, 7)
 
             drawBox(20, 82, 88, 16)
             print('press X to continue', (128 - 19 * 4)/2, 88, 7)
@@ -793,14 +933,27 @@ function drawGame()
         )
     end
 
-    if gameStartTimer == 0 and not holeCompleted and waterTimer == 0 then
-        ball:draw()
-        if ball.isStopped then
+    -- Draw all other balls, except player's (which might be in the water)
+    -- Only draw if at least one stroke as been played (so all balls aren't
+    -- drawn on the tee.)
+    for i, ball in ipairs(balls) do
+        if
+            i ~= activePlayer and
+            not playerHasCompletedHole[i] and
+            scores[i][currentHole] > 0
+        then
+            ball:draw(i)
+        end
+    end
+
+    if activePlayer > 0 and gameStartTimer == 0 and not playerHasCompletedHole[activePlayer] and waterTimer == 0 then
+        balls[activePlayer]:draw(activePlayer)
+        if balls[activePlayer].isStopped then
             line(
-                ball.x + Ball.SIZE/2 + ANGLE_INDICATOR_BUFFER * cos(angle),
-                ball.y + Ball.SIZE/2 + ANGLE_INDICATOR_BUFFER * sin(angle),
-                ball.x + Ball.SIZE/2 + (ANGLE_INDICATOR_BUFFER + ANGLE_INDICATOR_LENGTH) * cos(angle),
-                ball.y + Ball.SIZE/2 + (ANGLE_INDICATOR_BUFFER + ANGLE_INDICATOR_LENGTH) * sin(angle),
+                balls[activePlayer].x + Ball.SIZE/2 + ANGLE_INDICATOR_BUFFER * cos(angle),
+                balls[activePlayer].y + Ball.SIZE/2 + ANGLE_INDICATOR_BUFFER * sin(angle),
+                balls[activePlayer].x + Ball.SIZE/2 + (ANGLE_INDICATOR_BUFFER + ANGLE_INDICATOR_LENGTH) * cos(angle),
+                balls[activePlayer].y + Ball.SIZE/2 + (ANGLE_INDICATOR_BUFFER + ANGLE_INDICATOR_LENGTH) * sin(angle),
                 7
             )
         end
@@ -857,6 +1010,8 @@ local sceneTransitionPixels = createTransitionPixels()
 
 local titleTimer = 0
 local showingInstructions = false
+local selectedPlayerCount = 1
+
 local function updateTitles()
     titleTimer = titleTimer + 1
     if titleTimer == 90 then
@@ -865,9 +1020,18 @@ local function updateTitles()
     end
     if titleTimer > 120 then
         if not showingInstructions then
+            if btnp(0) and selectedPlayerCount > 1 then
+                sfx(SFX.STROKE)
+                selectedPlayerCount = selectedPlayerCount - 1
+            elseif btnp(1) and selectedPlayerCount < 4 then
+                sfx(SFX.STROKE)
+                selectedPlayerCount = selectedPlayerCount + 1
+            end
+
             if btnp(5) then
                 currentState = STATES.GAME
                 sfx(SFX.SELECT)
+                initGame(selectedPlayerCount)
             elseif btnp(4) then
                 -- Show instructions
                 sfx(SFX.SELECT)
@@ -896,31 +1060,35 @@ local function drawTitles()
         )
     elseif titleTimer >= 90 then
         -- Logo
-        drawBox(12, 32, 104, 32)
+        drawBox(12, 16, 104, 32)
         spr(
             96,
             (128 - 9 * 8)/2,
-            40,
+            24,
             9,
             2
         )
 
         if showingInstructions then
-            drawBox(4, 72, 120, 48)
+            drawBox(4, 64, 120, 52)
             local angleInstructionText = "\x8b \x91 - adjust stroke angle"
             local powerInstructionText = "\x97 (held) - select power"
             local strokeInstructionText = "\x97 (release) - play stroke"
             local scorecardInstructionText = "\x8e - show scorecard"
-            print(angleInstructionText, (128 - #angleInstructionText * 4)/2, 78, 7)
-            print(powerInstructionText, (128 - #powerInstructionText * 4)/2, 88, 7)
-            print(strokeInstructionText, (128 - #strokeInstructionText * 4)/2, 98, 7)
-            print(scorecardInstructionText, (128 - #scorecardInstructionText * 4)/2, 108, 7)
+            print(angleInstructionText, (128 - #angleInstructionText * 4)/2, 70, 7)
+            print(powerInstructionText, (128 - #powerInstructionText * 4)/2, 82, 7)
+            print(strokeInstructionText, (128 - #strokeInstructionText * 4)/2, 94, 7)
+            print(scorecardInstructionText, (128 - #scorecardInstructionText * 4)/2, 106, 7)
         else
-            drawBox(4, 80, 120, 28)
+            drawBox(4, 64, 120, 52)
+            local playersText = "select number of players"
+            local selectedPlayerCountText = "\x8b  "..tostring(selectedPlayerCount).."  \x91"
             local startText = "press \x97 to tee off"
             local instructionsText = "press \x8e to see instructions"
-            print(startText, (128 - #startText * 4)/2, 86, 7)
-            print(instructionsText, (128 - #instructionsText * 4)/2, 98, 7)
+            print(playersText, (128 - #playersText * 4)/2, 70, 7)
+            print(selectedPlayerCountText, (128 - #selectedPlayerCountText * 4)/2, 82, 10)
+            print(startText, (128 - #startText * 4)/2, 94, 7)
+            print(instructionsText, (128 - #instructionsText * 4)/2, 106, 7)
         end
 
         if titleTimer < 120 then
@@ -947,7 +1115,7 @@ function _init()
     palt(0, false)
     palt(14, true)
     currentState = STATES.TITLE
-    initGame()
+    initGame(1)
     sfx(SFX.SINK)
 end
 
