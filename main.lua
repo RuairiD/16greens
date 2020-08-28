@@ -280,6 +280,7 @@ Ball.SPRITES = {
     [3] = 55,
     [4] = 53,
 }
+Ball.STOPPED_TIMER_MAX = 30
 
 function Ball:new(x, y)
     self.x = x
@@ -288,6 +289,10 @@ function Ball:new(x, y)
     self.velY = 0
     self.isStopped = true
     self.isSunk = false
+    -- A ball has to be motionless for a specific number of frames
+    -- before it is considered to be 'stopped'. This is to prevent
+    -- the ball incorrectly stopping while changing direction on a ramp etc.
+    self.stoppedTimer = 0
 end
 
 function Ball:reset(x, y)
@@ -341,14 +346,12 @@ function Ball:update()
         self.y = newY
 
         -- Check for ramps
-        local onRamp = false
         local currentTile = mget(
             flr((self.x + Ball.SIZE/2)/8),
             flr((self.y + Ball.SIZE/2)/8)
         )
         for direction, tile in pairs(RAMPS) do
             if tile == currentTile then
-                onRamp = true
                 self:applyRamp(direction)
                 break
             end
@@ -358,10 +361,16 @@ function Ball:update()
         self.velY = self.velY * Ball.FRICTION
         local speed = sqrt(self.velX * self.velX + self.velY * self.velY)
         -- Ball cannot stop on a ramp.
-        if not onRamp and speed < 0.1 then
-            self.velX = 0
-            self.velY = 0
-            self.isStopped = true
+        if speed < 0.1 then
+            self.stoppedTimer = self.stoppedTimer + 1
+            if self.stoppedTimer >= Ball.STOPPED_TIMER_MAX then
+                self.velX = 0
+                self.velY = 0
+                self.isStopped = true
+                self.stoppedTimer = 0
+            end
+        else
+            self.stoppedTimer = 0
         end
 
         if collidedX or collidedY then
@@ -668,7 +677,7 @@ function updateGame()
             angle = angle - ANGLE_CHANGE_RATE
         end
 
-        if btnp(5) then
+        if btnp(5) and not strokePlayed then
             charging = true
         end
 
