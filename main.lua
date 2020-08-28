@@ -274,9 +274,9 @@ Ball.SIZE = 4
 Ball.RAMP_SPEED_CHANGE_RATE = 0.05
 Ball.SPRITES = {
     [1] = 17,
-    [2] = 53,
-    [3] = 54,
-    [4] = 55,
+    [2] = 54,
+    [3] = 55,
+    [4] = 53,
 }
 
 function Ball:new(x, y)
